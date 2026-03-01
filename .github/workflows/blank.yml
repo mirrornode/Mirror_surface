@@ -1,39 +1,67 @@
-- name: 'notify vercel'
-  uses: 'vercel/repository-dispatch/actions/status@v1'
-  with:
-    name: Vercel - fusion-energy-display-web-component-grok-files:# This is a basic workflow to help you get started with Actions
+name: Mirror_surface CI
 
-name: CI
-
-# Controls when the workflow will run
 on:
-  # Triggers the workflow on push or pull request events but only for the "main" branch
   push:
-    branches: [ "main" ]
+    branches: ["main", "develop"]
   pull_request:
-    branches: [ "main" ]
-
-  # Allows you to run this workflow manually from the Actions tab
+    branches: ["main", "develop"]
   workflow_dispatch:
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
-  build:
-    # The type of runner that the job will run on
+  lint-and-test:
+    name: Lint & Test
     runs-on: ubuntu-latest
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
 
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
+      - name: Install dependencies
         run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install flake8 pytest
+
+      - name: Lint with flake8
+        run: |
+          # stop the build if there are Python syntax errors or undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # exit-zero treats all errors as warnings
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Run tests
+        run: |
+          if [ -d tests ]; then pytest tests/ -v; else echo "No tests directory found — skipping"; fi
+
+  health-check:
+    name: Surface Health Check
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate workflow files
+        run: |
+          echo "Validating .github/workflows/*.yml structure..."
+          for f in .github/workflows/*.yml; do
+            echo "  Checking: $f"
+            python3 -c "import yaml, sys; yaml.safe_load(open('$f'))" && echo "  OK: $f" || echo "  FAIL: $f"
+          done
+
+      - name: Check for Enoch integration stubs
+        run: |
+          echo "Checking Enoch integration readiness..."
+          if [ -f enoch/stub.py ]; then
+            echo "Enoch stub found — integration layer ready"
+          else
+            echo "Enoch stub not yet present — awaiting Enoch module"
+          fi
+          echo "Mirror_surface health check complete"
